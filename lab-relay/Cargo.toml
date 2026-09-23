@@ -1,0 +1,9 @@
+[package]
+name = "lab-relay"
+version = "0.1.0"
+edition = "2024"
+description = "Switch the lab's dcttech USBRelay4 HID relay module"
+publish = false
+
+[dependencies]
+libc = "0.2"

@@ -1,0 +1,10 @@
+[Unit]
+Description=Sync lore.kernel.org mirrors every 30 minutes
+
+[Timer]
+OnStartupSec=5m
+OnUnitActiveSec=30m
+RandomizedDelaySec=2m
+
+[Install]
+WantedBy=timers.target

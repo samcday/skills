@@ -1,0 +1,9 @@
+[Unit]
+Description=Fetch lore.kernel.org mirrors into ~/lore and update the lore search index
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/lore sync
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=2h

@@ -1,0 +1,26 @@
+# Lists `lore update` mirrors and indexes, one lore.kernel.org inbox name per line
+# (the <name> in https://lore.kernel.org/<name>/). `lore add <name>` appends here.
+# This copy is the default; the live list is $LORE_DIR/lists (~/lore/lists).
+
+# qcom and phones
+linux-arm-msm        # Qualcomm SoC: nearly every qcom patch is CC'd here
+phone-devel          # phone mainlining
+soc                  # SoC tree pull requests
+
+# phone peripherals
+linux-input          # touchscreens, haptics, keys
+linux-sound          # codecs, amplifiers, qcom audio
+linux-media          # camera sensors, camss, venus/iris
+linux-pm             # chargers, fuel gauges, interconnect, cpufreq, thermal
+linux-usb            # USB, Type-C
+linux-phy            # PHYs
+linux-leds           # flash and notification LEDs
+linux-iio            # sensors, ADCs
+linux-remoteproc     # remoteproc/rpmsg (ADSP, modem)
+linux-clk            # clocks
+linux-gpio           # GPIO and pinctrl
+
+# Wi-Fi on qcom phones
+ath10k
+ath11k
+ath12k

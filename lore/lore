@@ -1,0 +1,307 @@
+#!/usr/bin/bash
+# Keep lei/public-inbox mirrors of lore.kernel.org lists current, and query them.
+#
+# $LORE_DIR (default ~/lore) holds one public-inbox v2 inbox per list, as
+# public-inbox-clone lays them out (<list>/git/<N>.git plus the index), and
+# `lists`, the lists to mirror. Every inbox is a lei external; lore.kernel.org's
+# /all/ is also configured as a remote external for `--remote`.
+set -euo pipefail
+
+LORE=https://lore.kernel.org
+ROOT=$(realpath -m "${LORE_DIR:-$HOME/lore}")
+HERE=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
+
+die() { echo "lore: $*" >&2; exit 2; }
+
+usage() {
+	cat <<EOF >&"$((${1:-2} ? 2 : 1))"
+usage: lore update [LIST...]    fetch from lore and index (all of $ROOT/lists by default)
+       lore add LIST...         mirror more lists (clone, first index, lei external)
+       lore q [-n N] [-t] [--remote] [--json] QUERY...
+                                one line per message (-t: per thread); --remote adds lore.kernel.org/all/
+       lore thread [--remote] [--json] MID
+                                every message of MID's thread, oldest first, indented by depth
+       lore show [-t] [--remote] MID...  read messages (-t: the whole thread)
+       lore mbox [--remote] MID  mboxrd of the whole thread, for b4 am -m / git am
+       lore status              lists, index state, last update
+MID is a Message-ID (with or without <>) or a lore.kernel.org, lkml.kernel.org or
+patch.msgid.link URL.
+EOF
+	exit "${1:-2}"
+}
+
+need() {
+	local c
+	for c; do command -v "$c" >/dev/null || die "$c not found (install lei, xapian-core, jq; see SKILL.md)"; done
+}
+
+lists() {
+	local f=$ROOT/lists
+	[[ -f $f ]] || f=$HERE/lists
+	sed -e 's/#.*//' -e 's/\r//' "$f" | awk 'NF {print $1}'
+}
+
+init_root() {
+	mkdir -p "$ROOT"
+	[[ -f $ROOT/lists ]] || cp "$HERE/lists" "$ROOT/lists"
+}
+
+# Normalise a Message-ID, <id>, mid:/id: form or lore/patch.msgid.link URL to a bare id.
+msgid() {
+	local m=$1 part parts
+	case $m in
+	*://* | lore.kernel.org/* | lkml.kernel.org/* | patch.msgid.link/*)
+		IFS=/ read -ra parts <<<"${m#*://}"
+		for part in "${parts[@]}"; do [[ $part == *@* ]] && { m=$part; break; }; done
+		m=$(printf '%b' "${m//%/\\x}") ;;
+	esac
+	m=${m#mid:}; m=${m#id:}; m=${m#<}; m=${m%>}
+	[[ -n $m ]] || die "empty Message-ID"
+	printf '%s\n' "$m"
+}
+
+cmd_update() {
+	need public-inbox-clone public-inbox-index lei
+	init_root
+	exec 9>"$ROOT/.update.lock"
+	if ! flock -n 9; then
+		echo "lore: waiting for another lore update to finish" >&2
+		flock 9
+	fi
+	local names=("$@") pats=() rc=0 n d
+	((${#names[@]})) || mapfile -t names < <(lists)
+	((${#names[@]})) || die "no lists in $ROOT/lists"
+	for n in "${names[@]}"; do
+		pats+=(-I "/$n")
+		# public-inbox-clone skips everything when lore's manifest is unchanged
+		# (304), which would also skip a newly added list.
+		[[ -f $ROOT/$n/inbox.lock ]] || rm -f "$ROOT/manifest.js.gz"
+	done
+	# One manifest request covers every list; only changed epochs are fetched.
+	public-inbox-clone -q --inbox-config=never --exit-code "${pats[@]}" "$LORE/" "$ROOT" || rc=$?
+	((rc == 0 || rc == 127)) || die "public-inbox-clone failed (exit $rc)"
+
+	# .lore-indexed marks an inbox whose first index (and compaction) completed;
+	# an interrupted first index is redone the same way next time.
+	local fresh=() known=() failed=0
+	for n in "${names[@]}"; do
+		d=$ROOT/$n
+		if [[ ! -f $d/inbox.lock ]]; then
+			echo "lore: $n was not cloned; is it an inbox on $LORE?" >&2
+			failed=1
+		elif [[ -f $d/.lore-indexed ]]; then
+			known+=("$d")
+		else
+			fresh+=("$d")
+		fi
+	done
+	# A no-op index is about 0.1 s per inbox, so run it even when nothing was fetched:
+	# it also catches up after an update that was interrupted between fetch and index.
+	((${#known[@]} == 0)) || public-inbox-index "${known[@]}"
+	if ((${#fresh[@]})); then
+		echo "lore: first index of ${fresh[*]##*/}; this takes minutes" >&2
+		local jobs=$(($(nproc) / 4)) compact=
+		((jobs >= 1)) || jobs=1
+		((jobs <= 4)) || jobs=4
+		! command -v xapian-compact >/dev/null || compact=--compact
+		# shellcheck disable=SC2016 # expanded by the inner bash
+		printf '%s\0' "${fresh[@]}" | xargs -0 -P "$jobs" -I{} bash -c '
+			public-inbox-index $1 "$2" 2>&1 |
+				grep -v -E "xapian-compact|Reduced by|doesn.t exist|too long, truncating" >&2
+			((PIPESTATUS[0] == 0)) && touch "$2/.lore-indexed"' _ "$compact" {} || true
+		for d in "${fresh[@]}"; do
+			if [[ -f $d/.lore-indexed ]]; then
+				known+=("$d")
+			else
+				echo "lore: first index of ${d##*/} failed; rerun lore update" >&2
+				failed=1
+			fi
+		done
+	fi
+
+	# 9>&-: a lei-daemon started here must not inherit (and hold) the update lock.
+	local have
+	have=$(lei ls-external 9>&- | awk '{print $1}')
+	for d in "${known[@]}" "$LORE/all/"; do
+		grep -qxF -- "$d" <<<"$have" || lei add-external "$d" 9>&-
+	done
+	date +%s >"$ROOT/.updated"
+	return "$failed"
+}
+
+cmd_add() {
+	(($#)) || usage
+	need curl
+	init_root
+	local n new=()
+	for n; do
+		[[ $n =~ ^[A-Za-z0-9._-]+$ ]] || die "bad list name: $n"
+		curl -sf -o /dev/null "$LORE/$n/manifest.js.gz" ||
+			die "$n is not an inbox on $LORE (names are the NAME in $LORE/NAME/)"
+		lists | grep -qxF -- "$n" || new+=("$n")
+	done
+	if ((${#new[@]})); then
+		[[ ! -s $ROOT/lists || -z $(tail -c1 "$ROOT/lists") ]] || echo >>"$ROOT/lists"
+		printf '%s\n' "${new[@]}" >>"$ROOT/lists"
+	fi
+	cmd_update "$@"
+}
+
+# jq programs over lei's JSON lines. Each starts by dropping cross-posted copies.
+JQ_DEDUPE='reduce .[] as $x ({seen: {}, out: []};
+	if .seen[$x.m] then . else .seen[$x.m] = true | .out += [$x] end) | .out
+	| if length == 0 then "lore: no matches\n" | halt_error(1) else . end'
+JQ_LINE='"\(.dt[:10]) \(.f[0][0] // .f[0][1]): \(.s)  <\(.m)>"'
+JQ_MSGS="$JQ_DEDUPE"' | sort_by(.dt) | reverse | .[:$n][] | if $j == 1 then tojson else '"$JQ_LINE"' end'
+# Threads are the connected components of the References graph, labelled by
+# their smallest Message-ID, so a reply with truncated References still joins.
+JQ_THREADS="$JQ_DEDUPE"' | . as $msgs
+	| (reduce $msgs[] as $x ({}; .[$x.m] = $x.m | reduce ($x.refs // [])[] as $r (.; .[$r] //= $r))) as $init
+	| {L: $init, changed: true}
+	| until(.changed | not; .changed = false
+		| reduce $msgs[] as $x (.; ([$x.m] + ($x.refs // [])) as $ids | ([$ids[] as $i | .L[$i]] | min) as $min
+			| reduce $ids[] as $i (.; if .L[$i] != $min then .L[$i] = $min | .changed = true end)))
+	| .L as $L | $msgs | group_by($L[.m])
+	| map({root: ((map(select((.refs // []) == [])) | sort_by(.dt)[0]) // sort_by(.dt)[0]),
+		n: length, last: (map(.dt) | max)})
+	| sort_by(.last) | reverse | .[:$n][]
+	| if $j == 1 then {root, messages: .n, last} | tojson
+	  else (.root | '"$JQ_LINE"') + "  [\(.n) msgs, last \(.last[:10])]" end'
+# Depth-first: each message under its nearest ancestor present, siblings by date.
+JQ_TREE="$JQ_DEDUPE"' | (map({(.m): true}) | add) as $have
+	| map(. + {p: ([(.refs // [])[] | select($have[.])] | last // "")})
+	| (group_by(.p) | map({key: .[0].p, value: sort_by(.dt)}) | from_entries) as $kids
+	| def walk($id; $d): ($kids[$id] // [])[] | (. + {d: $d}), walk(.m; $d + 1);
+	  walk(""; 0)
+	| if $j == 1 then del(.p, .d) | tojson else "  " * ([.d, 8] | min) + '"$JQ_LINE"' end'
+
+# lei q with the query on stdin, so lore's query syntax survives intact (lei
+# turns an argv word containing spaces into a phrase). Sets LEI_OUT. lei exits 0
+# on query errors, so its stderr decides. The 2023 snapshot also segfaults now
+# and then in DBD::SQLite cleanup after writing every result: that warning, and
+# the curl command lines of --remote, are dropped.
+lei_q() {
+	local query=$1 err rc=0
+	shift
+	err=$(mktemp)
+	LEI_OUT=$(printf '%s\n' "$query" | lei q --stdin "$@" 2>"$err") || rc=$?
+	grep -v -E -e 'PublicInbox::LeiXSearch \$\?=139' -e '^# /usr/bin/curl' "$err" >&2 || true
+	if ((rc)) || grep -q -E 'Exception:|^curl: \([0-9]+\)' "$err"; then
+		rm -f "$err"
+		die "lei query failed (exit $rc; see above)"
+	fi
+	rm -f "$err"
+}
+
+cmd_q() {
+	need lei jq
+	local n=25 prog=$JQ_MSGS json=0 opts=() q=() a
+	# Options may come anywhere before `--`; once the query has started, other
+	# words beginning with - are query terms (lore's -term negation).
+	while (($#)); do
+		a=$1
+		shift
+		case $a in
+		-n) n=${1-}; shift || true ;;
+		-n[0-9]*) n=${a#-n} ;;
+		-t) prog=$JQ_THREADS; opts+=(-t) ;;
+		--remote) opts+=(--remote --no-import-remote) ;;
+		--json) json=1 ;;
+		-h | --help) usage 0 ;;
+		--) q+=("$@"); break ;;
+		-*) ((${#q[@]})) || die "unknown option $a (a query starting with - needs lore q -- ...)"; q+=("$a") ;;
+		*) q+=("$a") ;;
+		esac
+	done
+	((${#q[@]})) || usage
+	[[ $n =~ ^[0-9]+$ ]] && ((n > 0)) || die "-n takes a positive number"
+	# lei applies -n before it drops cross-posted copies, so ask for more than we print.
+	lei_q "${q[*]}" -f jsonl -n $((n * 8)) "${opts[@]}"
+	jq -sr --argjson n "$n" --argjson j "$json" "$prog" <<<"$LEI_OUT"
+}
+
+# Parse [--remote] [--json] [-t] MID... into the caller's ids, lopts, json, threads.
+parse_mids() {
+	local a
+	for a; do
+		case $a in
+		--remote) lopts+=(--remote --no-import-remote) ;;
+		--json) json=1 ;;
+		-t) threads=1 ;;
+		-h | --help) usage 0 ;;
+		-*) die "unknown option $a" ;;
+		*) ids+=("$(msgid "$a")") ;;
+		esac
+	done
+	((${#ids[@]})) || usage
+}
+
+cmd_thread() {
+	need lei jq
+	local ids=() lopts=() json=0 threads=0
+	parse_mids "$@"
+	((${#ids[@]} == 1)) || usage
+	lei_q "mid:${ids[0]}" -t -f jsonl "${lopts[@]}"
+	jq -sr --argjson n 0 --argjson j "$json" "$JQ_TREE" <<<"$LEI_OUT"
+}
+
+cmd_show() {
+	need lei
+	local ids=() lopts=() json=0 threads=0 id out
+	parse_mids "$@"
+	((threads == 0)) || lopts+=(-t)
+	for id in "${ids[@]}"; do
+		out=$(lei lcat -d mid "${lopts[@]}" "<$id>") || die "lei lcat failed"
+		[[ -n $out ]] || die "<$id> not found locally; lore update, or --remote"
+		printf '%s\n' "$out"
+	done
+}
+
+cmd_mbox() {
+	need lei
+	local ids=() lopts=() json=0 threads=0
+	parse_mids "$@"
+	((${#ids[@]} == 1)) || usage
+	# lei's mbox writer wedges its workers when nothing matches, so look first.
+	lei_q "mid:${ids[0]}" -f jsonl -n 1 "${lopts[@]}"
+	[[ -n $LEI_OUT ]] || die "<${ids[0]}> not found locally; lore update, or --remote"
+	lei_q "mid:${ids[0]}" -t -d mid -f mboxrd "${lopts[@]}"
+	printf '%s\n' "$LEI_OUT"
+}
+
+cmd_status() {
+	local n d state updated=never now t
+	now=$(date +%s)
+	t=$(cat "$ROOT/.updated" 2>/dev/null || true)
+	[[ ! $t =~ ^[0-9]+$ ]] || updated="$(date -d "@$t" '+%F %R') ($(((now - t) / 60)) min ago)"
+	echo "$ROOT: last update $updated"
+	for n in $(lists); do
+		d=$ROOT/$n
+		if [[ -f $d/.lore-indexed ]]; then state=indexed
+		elif [[ -f $d/msgmap.sqlite3 ]]; then state="first index incomplete (rerun lore update)"
+		elif [[ -d $d/git ]]; then state="cloned, not indexed"
+		else state="not cloned yet (lore update)"; fi
+		printf '%-20s %s\n' "$n" "$state"
+	done
+	local ext
+	ext=$(lei ls-external 2>/dev/null | awk '{print $1}' || true)
+	for d in "$ROOT"/*/; do
+		[[ -d $d ]] || continue
+		n=${d%/}; n=${n##*/}
+		lists | grep -qxF -- "$n" && continue
+		if grep -qxF -- "${d%/}" <<<"$ext"; then
+			printf '%-20s %s\n' "$n" "not in lists but still searched (lei forget-external ${d%/})"
+		else
+			printf '%-20s %s\n' "$n" "on disk, not in lists (not searched; lore add $n to use it)"
+		fi
+	done
+}
+
+(($#)) || usage
+cmd=$1
+shift
+case $cmd in
+update | add | q | thread | show | mbox | status) "cmd_$cmd" "$@" ;;
+-h | --help | help) usage 0 ;;
+*) usage ;;
+esac

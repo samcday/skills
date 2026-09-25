@@ -52,6 +52,18 @@ init_root() {
 	[[ -f $ROOT/lists ]] || cp "$HERE/lists" "$ROOT/lists"
 }
 
+# Serialise updates and edits of the lists file. Held until exit; taken once.
+LOCKED=0
+lock() {
+	((LOCKED)) && return
+	exec 9>"$ROOT/.update.lock"
+	if ! flock -n 9; then
+		echo "lore: waiting for another lore update to finish" >&2
+		flock 9
+	fi
+	LOCKED=1
+}
+
 # Normalise a Message-ID, <id>, mid:/id: form or lore/patch.msgid.link URL to a bare id.
 msgid() {
 	local m=$1 part parts
@@ -69,11 +81,7 @@ msgid() {
 cmd_update() {
 	need public-inbox-clone public-inbox-index lei
 	init_root
-	exec 9>"$ROOT/.update.lock"
-	if ! flock -n 9; then
-		echo "lore: waiting for another lore update to finish" >&2
-		flock 9
-	fi
+	lock
 	local names=("$@") pats=() rc=0 n d hint=
 	((${#names[@]})) || { mapfile -t names < <(lists); hint="fix $ROOT/lists"; }
 	((${#names[@]})) || die "no lists in $ROOT/lists"
@@ -145,7 +153,10 @@ cmd_add() {
 		check_name "$n"
 		curl -sf -o /dev/null "$LORE/$n/manifest.js.gz" ||
 			die "$n is not an inbox on $LORE (names are the NAME in $LORE/NAME/)"
-		lists | grep -qxF -- "$n" || new+=("$n")
+	done
+	lock
+	for n; do
+		lists | grep -qxF -- "$n" || printf '%s\n' "${new[@]}" | grep -qxF -- "$n" || new+=("$n")
 	done
 	if ((${#new[@]})); then
 		[[ ! -s $ROOT/lists || -z $(tail -c1 "$ROOT/lists") ]] || echo >>"$ROOT/lists"
@@ -247,7 +258,7 @@ cmd_thread() {
 	need lei jq
 	local ids=() lopts=() json=0 threads=0
 	parse_mids "$@"
-	((${#ids[@]} == 1)) || usage
+	((${#ids[@]} == 1 && threads == 0)) || usage
 	lei_q "mid:${ids[0]}" -t -f jsonl "${lopts[@]}"
 	jq -sr --argjson n 0 --argjson j "$json" "$JQ_TREE" <<<"$LEI_OUT"
 }
@@ -256,6 +267,7 @@ cmd_show() {
 	need lei
 	local ids=() lopts=() json=0 threads=0 id out
 	parse_mids "$@"
+	((json == 0)) || die "--json is for q and thread"
 	((threads == 0)) || lopts+=(-t)
 	for id in "${ids[@]}"; do
 		out=$(lei lcat -d mid "${lopts[@]}" "<$id>") || die "lei lcat failed"
@@ -268,7 +280,8 @@ cmd_mbox() {
 	need lei
 	local ids=() lopts=() json=0 threads=0
 	parse_mids "$@"
-	((${#ids[@]} == 1)) || usage
+	((${#ids[@]} == 1 && threads == 0)) || usage
+	((json == 0)) || die "--json is for q and thread"
 	# lei's mbox writer wedges its workers when nothing matches, so look first.
 	lei_q "mid:${ids[0]}" -f jsonl -n 1 "${lopts[@]}"
 	[[ -n $LEI_OUT ]] || die "<${ids[0]}> not found locally; lore update, or --remote"

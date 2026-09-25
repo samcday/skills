@@ -59,6 +59,26 @@ lock() {
 	LOCKED=1
 }
 
+# Normalise a Message-ID, <id>, mid:/id: form or lore.kernel.org /
+# lkml.kernel.org / patch.msgid.link URL to a bare id.
+msgid() {
+	local m=$1 fixed=
+
+	case $m in
+	*'://'*) m=${m#*://*/} fixed=1 ;;
+	lore.kernel.org/* | lkml.kernel.org/* | patch.msgid.link/*) m=${m#*/} fixed=1 ;;
+	esac
+	if ((fixed)); then
+		# The Message-ID is the rest of the path, slashes and all.
+		m=${m#r/} m=${m#all/} m=${m#lkml/}
+		m=${m%%[?#]*} m=${m%/}
+		m=$(printf '%b' "${m//%/\\x}")
+	fi
+	m=${m#mid:} m=${m#id:} m=${m#<} m=${m%>}
+	[[ -n $m ]] || die "empty Message-ID"
+	printf '%s\n' "$m"
+}
+
 # Create $ROOT and, under the lock, the lists file from the default beside this script.
 init_root() {
 	mkdir -p "$ROOT"

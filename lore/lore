@@ -41,6 +41,12 @@ lists() {
 	sed -e 's/#.*//' -e 's/\r//' "$f" | awk 'NF {print $1}'
 }
 
+# Inbox names as lore uses them; the leading alphanumeric also rules out `.` and
+# `..`, which curl would collapse into lore's root manifest.
+check_name() {
+	[[ $1 =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die "bad list name: '$1'${2:+ ($2)}"
+}
+
 init_root() {
 	mkdir -p "$ROOT"
 	[[ -f $ROOT/lists ]] || cp "$HERE/lists" "$ROOT/lists"
@@ -68,10 +74,11 @@ cmd_update() {
 		echo "lore: waiting for another lore update to finish" >&2
 		flock 9
 	fi
-	local names=("$@") pats=() rc=0 n d
-	((${#names[@]})) || mapfile -t names < <(lists)
+	local names=("$@") pats=() rc=0 n d hint=
+	((${#names[@]})) || { mapfile -t names < <(lists); hint="fix $ROOT/lists"; }
 	((${#names[@]})) || die "no lists in $ROOT/lists"
 	for n in "${names[@]}"; do
+		check_name "$n" "$hint"
 		pats+=(-I "/$n")
 		# public-inbox-clone skips everything when lore's manifest is unchanged
 		# (304), which would also skip a newly added list.
@@ -135,7 +142,7 @@ cmd_add() {
 	init_root
 	local n new=()
 	for n; do
-		[[ $n =~ ^[A-Za-z0-9._-]+$ ]] || die "bad list name: $n"
+		check_name "$n"
 		curl -sf -o /dev/null "$LORE/$n/manifest.js.gz" ||
 			die "$n is not an inbox on $LORE (names are the NAME in $LORE/NAME/)"
 		lists | grep -qxF -- "$n" || new+=("$n")

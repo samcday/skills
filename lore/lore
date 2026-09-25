@@ -70,8 +70,12 @@ msgid() {
 	case $m in
 	*://* | lore.kernel.org/* | lkml.kernel.org/* | patch.msgid.link/*)
 		IFS=/ read -ra parts <<<"${m#*://}"
-		for part in "${parts[@]}"; do [[ $part == *@* ]] && { m=$part; break; }; done
-		m=$(printf '%b' "${m//%/\\x}") ;;
+		m=
+		for part in "${parts[@]}"; do
+			part=$(printf '%b' "${part//%/\\x}")
+			[[ $part == *@* ]] && { m=$part; break; }
+		done
+		[[ -n $m ]] || die "no Message-ID in $1" ;;
 	esac
 	m=${m#mid:}; m=${m#id:}; m=${m#<}; m=${m%>}
 	[[ -n $m ]] || die "empty Message-ID"

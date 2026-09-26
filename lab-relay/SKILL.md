@@ -12,17 +12,23 @@ contacts are rated 10 A at 30 V DC. It runs entirely from USB. Its barrel jack
 and blue 2-pin terminal are an optional external supply through an unmarked
 regulator; leave them unused.
 
-```sh
-cargo run -q --release --manifest-path ~/.claude/skills/lab-relay/Cargo.toml -- status | on N | off N | pulse N [SECONDS]
+Run it as `cargo run -q --release --manifest-path
+~/.claude/skills/lab-relay/Cargo.toml -- COMMAND`, where `COMMAND` is one of:
+
+```text
+status
+on N
+off N
+pulse N [SECONDS]
 ```
 
 The first run builds it. Every command prints the coil states, such as
 `1:off 2:off 3:off 4:off`, and checks each switch against the module's own
 report. `on` energises a coil: NO closes and NC opens. All coils drop when the
-module loses USB power. A pulse holds SIGINT, SIGTERM and SIGHUP from before
-the coil closes. The first of those to arrive ends the pulse early, releases
-the coil, and exits 128 plus the signal number. Only SIGKILL can leave a coil
-on.
+module loses USB power. A pulse blocks every signal it can before the coil
+closes. The first signal to arrive ends the pulse early, releases the coil, and
+exits 128 plus the signal number. Only SIGKILL can leave a coil on; SIGSTOP
+holds it on until SIGCONT.
 
 | Channel | Load |
 |---|---|

@@ -5,3 +5,4 @@ helpers). Link a skill into place to use it, for example
 `ln -s ~/src/skills/lab-relay ~/.claude/skills/lab-relay`.
 
 - `lab-relay`: switch the lab USB relay and hard power-cycle the DragonBoard 410c (Rust).
+- `lore`: search Linux kernel mailing lists through lei and local public-inbox mirrors.

@@ -88,12 +88,15 @@ impl Relay {
         Ok(())
     }
 
-    /// Energises a coil for `length` or until SIGINT, SIGTERM or SIGHUP, then
-    /// releases it. Those signals stay blocked from before the coil closes, so
-    /// only SIGKILL can leave it on. Returns the signal that ended the pulse.
+    /// Energises a coil for `length` or until the first signal, then releases
+    /// it. Every blockable signal is held from before the coil closes, so only
+    /// SIGKILL can leave it on. Returns the signal that ended the pulse.
     fn pulse(&self, channel: u8, length: Duration) -> io::Result<Option<i32>> {
+        let deadline = deadline(length)?;
         let signals = block_signals();
-        let held = self.switch(channel, true).map(|()| wait(&signals, length));
+        let held = self
+            .switch(channel, true)
+            .map(|()| wait(&signals, deadline));
         let released = self.switch(channel, false);
         let signal = held?;
         released?;
@@ -101,22 +104,24 @@ impl Relay {
     }
 }
 
+fn deadline(length: Duration) -> io::Result<Instant> {
+    let deadline = Instant::now().checked_add(length);
+    deadline.ok_or_else(|| io::Error::other("pulse length out of range"))
+}
+
+/// Blocks every signal the kernel lets a process block and returns the set.
 fn block_signals() -> libc::sigset_t {
-    // SAFETY: sigset_t is plain data and sigemptyset initialises it before use.
+    // SAFETY: sigset_t is plain data and sigfillset initialises it before use.
     unsafe {
         let mut set = std::mem::zeroed();
-        libc::sigemptyset(&mut set);
-        for signal in [libc::SIGINT, libc::SIGTERM, libc::SIGHUP] {
-            libc::sigaddset(&mut set, signal);
-        }
+        libc::sigfillset(&mut set);
         libc::pthread_sigmask(libc::SIG_BLOCK, &set, std::ptr::null_mut());
         set
     }
 }
 
-/// Waits up to `length` for one of the blocked `signals` and returns it.
-fn wait(signals: &libc::sigset_t, length: Duration) -> Option<i32> {
-    let deadline = Instant::now() + length;
+/// Waits until `deadline` for one of the blocked `signals` and returns it.
+fn wait(signals: &libc::sigset_t, deadline: Instant) -> Option<i32> {
     while let Some(left) = deadline.checked_duration_since(Instant::now()) {
         let timeout = libc::timespec {
             tv_sec: left.as_secs() as _,
@@ -204,13 +209,23 @@ mod tests {
     }
 
     #[test]
-    fn blocked_signal_ends_the_wait() {
+    fn pulse_length_must_fit_a_deadline() {
+        assert!(deadline(Duration::from_secs(5)).is_ok());
+        assert!(deadline(Duration::MAX).is_err());
+    }
+
+    #[test]
+    fn any_signal_ends_the_wait() {
         let signals = block_signals();
-        assert_eq!(wait(&signals, Duration::from_millis(20)), None);
-        // SAFETY: raise() targets this thread, where the signal is blocked.
-        unsafe { libc::raise(libc::SIGTERM) };
-        let start = Instant::now();
-        assert_eq!(wait(&signals, Duration::from_secs(5)), Some(libc::SIGTERM));
-        assert!(start.elapsed() < Duration::from_secs(1));
+        let soon = || Instant::now() + Duration::from_millis(20);
+        assert_eq!(wait(&signals, soon()), None);
+        for signal in [libc::SIGTERM, libc::SIGQUIT, libc::SIGUSR1] {
+            // SAFETY: raise() targets this thread, where every signal is blocked.
+            unsafe { libc::raise(signal) };
+            let start = Instant::now();
+            let later = start + Duration::from_secs(5);
+            assert_eq!(wait(&signals, later), Some(signal));
+            assert!(start.elapsed() < Duration::from_secs(1));
+        }
     }
 }

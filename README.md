@@ -12,14 +12,15 @@ other directory is one skill (`SKILL.md` plus any helpers).
     ~/.agents/skills/install
 
 `~/.agents/skills` is where Codex, OpenCode and ZCode look for user skills.
-`install` links the rest, and refuses to replace anything that isn't already a
-symlink:
+`install` links the rest, and leaves anything already in the way for you to
+move aside. Re-run it after adding or removing a skill.
 
 | Harness | Global instructions | User skills |
 |---|---|---|
-| Claude Code | `~/.claude/CLAUDE.md` (linked) | `~/.claude/skills` (linked) |
+| Claude Code | `~/.claude/CLAUDE.md` (linked) | `~/.claude/skills/<skill>` (linked per skill) |
 | Codex | `~/.codex/AGENTS.md` (linked) | `~/.agents/skills` |
-| OpenCode | falls back to `~/.claude/CLAUDE.md` | `~/.agents/skills` |
+| OpenCode | falls back to `~/.claude/CLAUDE.md`, unless Claude Code compatibility is disabled | `~/.agents/skills` |
 | ZCode | `~/.zcode/AGENTS.md` (linked) | `~/.agents/skills` |
 
-`git pull` updates every harness at once.
+Claude Code keeps its own cache of claude.ai skills in `~/.claude/skills/synced`,
+which is why skills are linked one by one instead of linking the directory.

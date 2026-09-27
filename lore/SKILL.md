@@ -171,8 +171,7 @@ To stop tracking a list, delete its line from `~/lore/lists` and run
    (compaction), `jq` and `b4`. They are Fedora packages; Sam's workstation
    image (`~/src/workstation-config`) already has them.
 2. Put the script on PATH: `ln -s <this directory>/lore ~/.local/bin/lore`.
-   Link this directory into `~/.agents/skills` (Codex, OpenCode) and
-   `~/.claude/skills` (Claude Code).
+   The repository's `install` script makes the skill visible to every harness.
 3. Run `lore update`. It copies `lists` from beside this file to
    `~/lore/lists`, then clones and indexes every list: 6.4 GB of git plus
    21 GB of index for the default 17 lists, and 20-40 minutes of indexing on

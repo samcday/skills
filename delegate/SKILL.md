@@ -41,6 +41,9 @@ the tests yourself.
 
     glm-flash --cwd <absolute git checkout> --out <absolute result dir> --mode plan --prompt-file <brief.md>
 
+`glm-flash` drops `ZCODE_BASE_URL`, `ZCODE_MODEL` and `ANTHROPIC_API_KEY` from
+the worker's environment itself, so an exported value can't reroute it.
+
 - Run it in the background and wait for it to exit; don't poll.
 - `plan` is read-only.
 - `edit` writes files and runs low-risk shell, but `python3` and `git commit`
@@ -91,7 +94,8 @@ Use DeepSeek for cheap mechanical work. Call the `opencode` MCP with
 `providerID opencode-go`, `modelID deepseek-v4.1-flash` and variant `high`.
 
 - The MCP expects a server on 127.0.0.1:4096. If `opencode_setup` reports it as
-  unreachable, start one:
+  unreachable, update OpenCode (1.18.31 when this was written; older releases
+  let web pages reach the local server) and start one:
 
       setsid nohup opencode serve --hostname 127.0.0.1 --port 4096 &
 

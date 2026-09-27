@@ -27,7 +27,7 @@ batches.
 1. List the memories added or changed since the last pass, in every store on the
    machine, not just the current project's. Known stores:
    - Claude Code: `~/.claude/projects/*/memory/`, one per project.
-   - Codex: `~/.codex/memories/`.
+   - Codex: `$CODEX_HOME/memories/` (`CODEX_HOME` defaults to `~/.codex`).
    - Check for others when a harness is added.
 2. Work in batches of about ten, grouped by kind. For each memory, propose
    either a destination with the exact text, or leaving it alone. Quote what

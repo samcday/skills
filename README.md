@@ -6,6 +6,8 @@ other directory is one skill (`SKILL.md` plus any helpers).
 
 - `delegate`: hand bounded work to GLM-5.3-Flash (ZCode) or DeepSeek (OpenCode).
 - `lore`: search Linux kernel mailing lists through lei and local public-inbox mirrors.
+- `memory-curation`: turn durable agent memories into `AGENTS.md`, docs, skills
+  and issue updates.
 
 ## Install
 

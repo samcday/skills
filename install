@@ -1,6 +1,6 @@
 #!/bin/sh
 # Link this checkout into every agent harness. It must live at
-# ~/.agents/skills, where Codex, OpenCode and ZCode find skills on their own.
+# ~/.agents/skills, where Codex, Delta, OpenCode and ZCode find skills directly.
 # Safe to re-run, and re-run it after adding or removing a skill.
 set -eu
 
@@ -27,6 +27,15 @@ link() {
 link "$here/AGENTS.md" "$HOME/.claude/CLAUDE.md" # OpenCode falls back to this too
 link "$here/AGENTS.md" "$HOME/.codex/AGENTS.md"
 link "$here/AGENTS.md" "$HOME/.zcode/AGENTS.md"
+
+if [ -n "${DELTA_CONFIG_DIR:-}" ]; then
+	delta_config_dir=$DELTA_CONFIG_DIR
+elif [ "$(uname -s)" = Darwin ]; then
+	delta_config_dir="$HOME/.config/delta"
+else
+	delta_config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/delta"
+fi
+link "$here/AGENTS.md" "$delta_config_dir/AGENTS.md"
 
 # Claude Code only reads ~/.claude/skills, and keeps its own claude.ai skill
 # cache in there (synced/), so link each skill rather than the whole directory.

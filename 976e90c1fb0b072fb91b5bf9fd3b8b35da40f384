@@ -1,0 +1,35 @@
+Delta installer validation, 2026-09-29
+
+Repository: https://github.com/samcday/skills
+Commit: 976e90c1fb0b072fb91b5bf9fd3b8b35da40f384
+Base: 4f6b8aaa3f2ab1df51bab5da8d49b67439f3943f (main)
+
+The change links shared AGENTS.md into Delta's personal rules directory.
+Delta discovers personal skills directly under ~/.agents/skills, so it needs
+no extra skill links. The directory choices and AGENT.md precedence follow:
+https://delta.dev/docs/configuration/settings#rules
+https://delta.dev/docs/agents/skills
+
+Validation on Linux in an isolated /tmp clone:
+- sh -n install: exit 0.
+- git diff --check: exit 0.
+- Python 3 ran the actual installer via subprocess.run(['sh', installer]),
+  copying install, AGENTS.md, and lore into each temporary
+  HOME/.agents/skills directory. HOME was overridden only in child-process
+  environments; the real home and installed checkout were untouched.
+- Each fixture had a directory name containing spaces. XDG_CONFIG_HOME and
+  DELTA_CONFIG_DIR were removed from inherited test environments unless the
+  case set them. A PATH-prefixed uname stub selected Linux or Darwin.
+- Five successful fixtures, each rerun to check idempotence: Linux defaults;
+  Linux with XDG_CONFIG_HOME; Linux with DELTA_CONFIG_DIR and XDG_CONFIG_HOME;
+  Darwin with XDG_CONFIG_HOME (must be ignored); Darwin with DELTA_CONFIG_DIR.
+  Assertions checked AGENTS.md was a symlink to this checkout's AGENTS.md,
+  the existing Claude lore link still resolved correctly, and each second
+  run exited 0 with no output.
+- Three occupied-destination fixtures: regular file, symlink to an existing
+  different file, dangling symlink. Every run exited 1 with "is in the way"
+  and preserved the destination's original contents or symlink target.
+
+Result: all 8 fixtures passed (13 installer invocations total).
+This verifies path selection and installer behavior, not Delta's runtime
+rules reload. Darwin was simulated for path selection, not run on macOS.

@@ -4,7 +4,10 @@ Sam's global agent instructions and skills, shared by every harness (Claude
 Code, Codex, Delta, OpenCode, ZCode). `AGENTS.md` holds the global instructions; each
 other directory is one skill (`SKILL.md` plus any helpers).
 
+- `delegate`: hand bounded work to GLM-5.3-Flash (ZCode) or DeepSeek (OpenCode).
 - `lore`: search Linux kernel mailing lists through lei and local public-inbox mirrors.
+- `memory-curation`: turn durable agent memories into `AGENTS.md`, docs, skills
+  and issue updates.
 
 ## Install
 

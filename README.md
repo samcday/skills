@@ -5,6 +5,7 @@ Code, Codex, Delta, OpenCode, ZCode). `AGENTS.md` holds the global instructions;
 other directory is one skill (`SKILL.md` plus any helpers).
 
 - `delegate`: hand bounded work to GLM-5.3-Flash (ZCode) or DeepSeek (OpenCode).
+- `lab-relay`: switch the lab USB relay and hard power-cycle the DragonBoard 410c.
 - `lore`: search Linux kernel mailing lists through lei and local public-inbox mirrors.
 - `memory-curation`: turn durable agent memories into `AGENTS.md`, docs, skills
   and issue updates.

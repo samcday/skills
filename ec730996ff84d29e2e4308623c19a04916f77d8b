@@ -1,0 +1,37 @@
+Delta CnC validation for samcday/skills ec730996ff84d29e2e4308623c19a04916f77d8b
+Date: 2026-10-06T09:10:50.719176+00:00
+Controller: sam-laptop; Python 3.15.0rc2
+
+Synthetic validation on the committed tree:
+  python3 -m unittest discover -s delta-cnc -p 'test_*.py' -v
+  Result: 20 tests passed.
+  Skill YAML frontmatter parsed successfully with the installed PyYAML.
+  git diff --cached --check passed before commit.
+
+Read-only live validation during implementation:
+  Ran cnc.py snapshot --ssh HOST --exclude CURRENT_ID for sam-desktop and sam-laptop.
+  Both reported the expected observed hostname and the same account.
+  Each used exactly auth status + thread list (two CLI calls).
+  Two-host collection wall time was 0.217 seconds in this smoke run.
+  compare succeeded; diff of an unchanged snapshot had no changes;
+  compare of two snapshots from the same host was rejected.
+  Ran parents for one selected existing laptop parent: nine children, five parent-archived.
+  These initial live measurements preceded the final error-handling fixes.
+  sam-desktop: source metrics {"cli_calls": 2, "cli_stdout_bytes": 152083, "elapsed_seconds": 0.01}; transport metrics {"elapsed_seconds": 0.068, "ssh_target": "sam-desktop", "stdout_bytes": 83502}
+  sam-laptop: source metrics {"cli_calls": 2, "cli_stdout_bytes": 82998, "elapsed_seconds": 0.025}; transport metrics {"elapsed_seconds": 0.132, "ssh_target": "sam-laptop", "stdout_bytes": 45301}
+  Selected parent: source metrics {"cli_calls": 2, "cli_stdout_bytes": 8850545, "elapsed_seconds": 0.799}; transport metrics {"elapsed_seconds": 0.899, "ssh_target": "sam-laptop", "stdout_bytes": 5016}
+
+Final SSH smoke after error-handling fixes and ssh -T:
+  Correct desktop hostname; two CLI calls; transport {"elapsed_seconds": 0.11, "ssh_target": "sam-desktop", "stdout_bytes": 83503}
+
+Review findings addressed: quote YAML description; preserve explicit relative CLI paths;
+withhold failed stdout and bound stderr; reject missing child references and malformed
+snapshot containers; regression-test remote failures/exit propagation; disable SSH PTYs.
+
+Interpretation: catalog refresh requires no thread history export; selected parent
+inspection still serializes the full thread on its source but sends only projected
+metadata over SSH. Errors remain unknown, not empty/successful state. This was not
+a transcript-equality or worktree audit, and no Delta mutation command was executed.
+
+Privacy: live thread bodies, names, IDs, account IDs, and join handles are intentionally
+omitted from this public note. Only aggregate measurements are recorded.

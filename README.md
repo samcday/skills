@@ -5,6 +5,8 @@ Code, Codex, Delta, OpenCode, ZCode). `AGENTS.md` holds the global instructions;
 other directory is one skill (`SKILL.md` plus any helpers).
 
 - `lore`: search Linux kernel mailing lists through lei and local public-inbox mirrors.
+- `delta-cnc`: cheap Delta thread inventories, cross-machine comparisons, and a
+  bounded workflow for driving ongoing threads toward archival.
 
 ## Install
 

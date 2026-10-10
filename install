@@ -1,14 +1,10 @@
 #!/bin/sh
-# Link this checkout into every agent harness. It must live at
-# ~/.agents/skills, where Codex, Delta, OpenCode and ZCode find skills directly.
-# Safe to re-run, and re-run it after adding or removing a skill.
+# Link AGENTS.md into every agent harness's global-instructions path. Safe to
+# re-run. Skills are not handled here: `npx skills add samcday/skills -g`
+# installs them into ~/.agents/skills and symlinks them into each harness.
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
-if [ "$here" != "$HOME/.agents/skills" ]; then
-	echo "install: clone this repository to ~/.agents/skills first" >&2
-	exit 1
-fi
 
 # link TARGET NAME: point NAME at TARGET. Anything else already at NAME, even a
 # symlink to somewhere else, is left alone for you to move aside.
@@ -36,15 +32,3 @@ else
 	delta_config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/delta"
 fi
 link "$here/AGENTS.md" "$delta_config_dir/AGENTS.md"
-
-# Claude Code only reads ~/.claude/skills, and keeps its own claude.ai skill
-# cache in there (synced/), so link each skill rather than the whole directory.
-for skill in "$here"/*/SKILL.md; do
-	skill=${skill%/SKILL.md}
-	link "$skill" "$HOME/.claude/skills/${skill##*/}"
-done
-for old in "$HOME"/.claude/skills/*; do
-	case $(readlink "$old" || true) in
-	"$here"/*) [ -e "$old" ] || { rm "$old"; echo "removed $old"; } ;;
-	esac
-done

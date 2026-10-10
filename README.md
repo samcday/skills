@@ -4,6 +4,7 @@ Sam's global agent instructions and skills, shared by every harness (Claude
 Code, Codex, Delta, OpenCode, ZCode). `AGENTS.md` holds the global instructions; each
 other directory is one skill (`SKILL.md` plus any helpers).
 
+- `masoncl-prompts-land`: land changes in `samcday/review-prompts` when explicitly requested.
 - `lore`: search Linux kernel mailing lists through lei and local public-inbox mirrors.
 - `fanout`: run a task as parallel Delta subagent waves (scouts, workers, reviewers).
 

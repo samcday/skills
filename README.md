@@ -5,6 +5,7 @@ Code, Codex, Delta, OpenCode, ZCode). `AGENTS.md` holds the global instructions;
 other directory is one skill (`SKILL.md` plus any helpers).
 
 - `lore`: search Linux kernel mailing lists through lei and local public-inbox mirrors.
+- `fanout`: run a task as parallel Delta subagent waves (scouts, workers, reviewers).
 
 ## Install
 
